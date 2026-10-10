@@ -36,14 +36,22 @@ def pct(v, sign=True):
 
 # ───────── dados ─────────
 def find_user(email):
-    req = urllib.request.Request(up.URL + "/auth/v1/admin/users?per_page=200",
-                                 headers={"apikey": up.KEY, "Authorization": "Bearer " + up.KEY})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        data = json.loads(r.read())
-    for u in data.get("users", data if isinstance(data, list) else []):
-        if (u.get("email") or "").lower() == email.lower():
-            return u["id"]
-    raise SystemExit("Utilizador não encontrado para " + email)
+    """Procura a conta pelo email; se não existir, usa o único utilizador com posições (app pessoal)."""
+    try:
+        req = urllib.request.Request(up.URL + "/auth/v1/admin/users?per_page=200",
+                                     headers={"apikey": up.KEY, "Authorization": "Bearer " + up.KEY})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            data = json.loads(r.read())
+        for u in data.get("users", data if isinstance(data, list) else []):
+            if (u.get("email") or "").strip().lower() == email.strip().lower():
+                return u["id"]
+    except Exception as e:
+        print(f"  lista de utilizadores indisponível: {e}")
+    ids = sorted({p["user_id"] for p in (up.api("GET", "positions?select=user_id") or [])})
+    if len(ids) == 1:
+        print("  email do segredo não coincide com a conta; usei o único utilizador com posições")
+        return ids[0]
+    raise SystemExit(f"Utilizador não encontrado ({len(ids)} contas com posições). Confirma o segredo REPORT_EMAIL.")
 
 
 def load(uid):
