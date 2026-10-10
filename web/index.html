@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carteira</title>
+<meta name="description" content="Acompanha os teus investimentos, por divisões, em euros.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: folha de acompanhamento. Resumo em faixa, divisões como tabela navegável, gráfico e distribuição lado a lado, posições por baixo. */
+:root{
+  --bg:#f1f4f6; --surface:#ffffff; --ink:#0e1a24; --muted:#586a78; --line:#d9e1e7;
+  --accent:#0a6a8a; --accent-ink:#ffffff; --gain:#0a7a4e; --loss:#bf3a2c; --soft:#e6f0f4;
+  --c1:#0a6a8a; --c2:#d08a1d; --c3:#6b57c9; --c4:#2f9a6e; --c5:#c2476b; --c6:#7a8a97; --c7:#3c86d6; --c8:#a8742f;
+  --font-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --font-body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0c141a; --surface:#131d25; --ink:#e7eef3; --muted:#8ea1b0; --line:#25333e;
+  --accent:#4cc0e3; --accent-ink:#06222c; --gain:#3fcf93; --loss:#ff7b6c; --soft:#182a35;
+  --c1:#4cc0e3; --c2:#e6a63f; --c3:#9c8cf0; --c4:#4cc48f; --c5:#ec7597; --c6:#8ea1b0; --c7:#6aa8f0; --c8:#cf9a5a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c141a; --surface:#131d25; --ink:#e7eef3; --muted:#8ea1b0; --line:#25333e;
+  --accent:#4cc0e3; --accent-ink:#06222c; --gain:#3fcf93; --loss:#ff7b6c; --soft:#182a35;
+  --c1:#4cc0e3; --c2:#e6a63f; --c3:#9c8cf0; --c4:#4cc48f; --c5:#ec7597; --c6:#8ea1b0; --c7:#6aa8f0; --c8:#cf9a5a; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.5;padding-inline:16px;padding-block:24px 48px}
+*{box-sizing:border-box}
+.wrap{max-width:1080px;margin-inline:auto;display:flex;flex-direction:column;gap:20px}
+h1,h2{font-family:var(--font-display);margin:0;font-weight:700;text-wrap:balance}
+h1{font-size:28px;letter-spacing:-.01em}
+h2{font-size:16px}
+.num{font-variant-numeric:tabular-nums}
+.top{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end;justify-content:space-between}
+.top p{margin:4px 0 0;color:var(--muted)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;cursor:pointer;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:8px 14px;min-height:38px}
+button:hover{border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button.link{border:0;background:none;padding:4px 6px;min-height:0;color:var(--accent)}
+button.danger{color:var(--loss)}
+.banner,.ctx{background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:8px 14px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
+.summary{background:var(--surface);border:1px solid var(--line);border-radius:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.summary>div{padding:16px 18px;border-inline-start:1px solid var(--line);min-width:0}
+.summary>div:first-child{border-inline-start:0}
+.lbl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.big{font-family:var(--font-display);font-size:30px;font-weight:700;line-height:1.15;margin-top:2px;overflow-wrap:anywhere}
+.sub{font-size:13px;margin-top:2px}
+.gain{color:var(--gain)} .loss{color:var(--loss)}
+.grid2{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:20px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;min-width:0;display:flex;flex-direction:column;gap:12px}
+.boxhead{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:baseline}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-inline-end:6px;vertical-align:-1px}
+svg{display:block;width:100%;height:auto}
+.axis{fill:var(--muted);font-family:var(--font-body);font-size:11px}
+.grid{stroke:var(--line);stroke-width:1}
+.hint{color:var(--muted);font-size:13px;margin:0}
+.alloc{display:flex;height:16px;border-radius:4px;overflow:hidden;gap:2px}
+.alloc span{min-width:3px}
+.alloclist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.alloclist li{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:8px;align-items:center}
+.alloclist i{width:10px;height:10px;border-radius:2px}
+.alloclist b{font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis}
+.alloclist b.mono{font-family:var(--font-mono)}
+.tablewrap{overflow-x:auto;margin-inline:-18px;padding-inline:18px}
+table{border-collapse:collapse;width:100%;min-width:760px}
+th{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:500;text-align:right;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 10px;border-bottom:1px solid var(--line);text-align:right;vertical-align:middle;white-space:nowrap}
+th:first-child,td:first-child{text-align:left;padding-inline-start:0}
+tr:last-child td{border-bottom:0}
+.tk{font-family:var(--font-mono);font-weight:500}
+.nm{display:block;color:var(--muted);font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+table.pos{min-width:920px}
+table.divs{min-width:640px}
+table.divs tr.sel td{background:var(--soft)}
+table.divs tr.pick{cursor:pointer}
+table.divs tr.pick:hover td{background:var(--soft)}
+table.divs button.name{border:0;background:none;padding:0;min-height:0;font-weight:600;text-align:left;display:inline-flex;gap:8px;align-items:center}
+.dot{display:inline-block;width:10px;height:10px;border-radius:2px;flex:none}
+.wcell{display:inline-flex;align-items:center;gap:8px;justify-content:flex-end}
+.wbar{display:inline-block;width:64px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.wbar i{display:block;height:100%;background:var(--accent)}
+select.sel{min-height:30px;padding:4px 8px;width:auto;max-width:170px;font-size:13px}
+.panel{background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+input,select{font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;min-height:38px;width:100%}
+.uprow{display:grid;grid-template-columns:minmax(0,1fr) 140px;gap:12px;align-items:center}
+.drow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+.uplist{display:flex;flex-direction:column;gap:8px;max-width:560px}
+.row-actions{display:flex;gap:4px;justify-content:flex-end}
+.check{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--ink)}
+.check input{width:auto;min-height:0}
+.empty{padding:28px 8px;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center}
+.empty p{max-width:52ch;margin:0;color:var(--muted)}
+.toast{position:fixed;inset-inline:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));margin-inline:auto;max-width:420px;background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:8px;text-align:center}
+.foot{color:var(--muted);font-size:12px;max-width:80ch}
+@media (max-width:820px){.grid2{grid-template-columns:minmax(0,1fr)}.summary>div{border-inline-start:0;border-top:1px solid var(--line)}.summary>div:first-child{border-top:0}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+html{background:var(--bg)}
+[hidden]{display:none!important}
+.authwrap{max-width:420px;margin:8vh auto 0;display:flex;flex-direction:column;gap:16px}
+.authcard{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:22px;display:flex;flex-direction:column;gap:14px}
+.msg{margin:0;padding:8px 12px;border-radius:6px;background:var(--soft);border:1px solid var(--line);font-size:13px}
+.msg.err{color:var(--loss);border-color:var(--loss)}
+.who{color:var(--muted);font-size:13px}
+.nop{color:var(--muted)}
+</style>
+</head>
+<body>
+<main id="auth" class="authwrap" hidden>
+  <div>
+    <h1>Carteira</h1>
+    <p class="hint">Acompanha os teus investimentos por divisões, em euros. Os teus dados são só teus.</p>
+  </div>
+  <form id="f-auth" class="authcard" autocomplete="on">
+    <p id="auth-setup" class="msg err" hidden>Falta ligar a base de dados: preenche o ficheiro config.js com o URL e a chave pública do projeto (ver README).</p>
+    <label>Email<input id="a-email" type="email" required autocomplete="email"></label>
+    <label>Palavra-passe<input id="a-pass" type="password" required minlength="8" autocomplete="current-password" placeholder="mínimo 8 caracteres"></label>
+    <p id="auth-msg" class="msg" hidden role="status"></p>
+    <div class="actions">
+      <button class="primary" type="submit" data-mode="in">Entrar</button>
+      <button type="submit" data-mode="up">Criar conta</button>
+    </div>
+    <button class="link" type="button" data-action="demo">Ver um exemplo sem criar conta</button>
+  </form>
+  <p class="foot">Esta aplicação não é aconselhamento financeiro. Os preços vêm de uma fonte gratuita e chegam com atraso (cerca de 15 a 20 minutos nas bolsas europeias).</p>
+</main>
+
+<div class="wrap" id="app" hidden>
+  <header class="top">
+    <div>
+      <h1>Carteira</h1>
+      <p id="stamp">A carregar…</p>
+    </div>
+    <div class="actions">
+      <button id="btn-update" data-action="refresh" type="button">Atualizar agora</button>
+      <button id="btn-add" class="primary" data-action="open-add" type="button">Adicionar posição</button>
+      <button id="btn-divs" data-action="open-divs" type="button">Gerir divisões</button>
+      <button id="btn-out" class="link" data-action="signout" type="button">Sair</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" hidden>
+    <span>Estás a ver dados de exemplo. Nada disto é teu.</span>
+    <button class="primary" data-action="leave-demo" type="button">Entrar ou criar conta</button>
+  </div>
+  <div id="warn" class="banner" hidden></div>
+
+  <section id="panel" hidden></section>
+  <div id="ctx" class="ctx" hidden></div>
+  <section id="summary" class="summary" aria-label="Resumo"></section>
+
+  <section class="box" aria-labelledby="h-divs">
+    <div class="boxhead"><h2 id="h-divs">Divisões</h2><span class="hint">Escolhe uma para ver só essa parte da carteira</span></div>
+    <div class="tablewrap" id="divtable"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="box" aria-labelledby="h-evo">
+      <div class="boxhead"><h2 id="h-evo">Evolução</h2><div class="legend"><span><i style="background:var(--accent)"></i>Valor</span><span><i style="background:var(--muted)"></i>Total investido</span></div></div>
+      <div id="chart"></div>
+    </section>
+    <section class="box" aria-labelledby="h-alloc">
+      <h2 id="h-alloc">Distribuição por divisão</h2>
+      <div id="alloc"></div>
+    </section>
+  </div>
+
+  <section class="box" aria-labelledby="h-pos">
+    <div class="boxhead"><h2 id="h-pos">Posições</h2><span class="hint" id="pos-note"></span></div>
+    <div class="tablewrap" id="positions"></div>
+  </section>
+
+  <p class="foot">Não é aconselhamento financeiro. Os preços chegam com atraso (cerca de 15 a 20 minutos nas bolsas europeias) e podem conter erros; confirma sempre na tua corretora. Os valores em dólares são convertidos para euros com a taxa do dia. O registo mensal é guardado automaticamente e inclui o valor de cada divisão. <span id="who" class="who"></span></p>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
