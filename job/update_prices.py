@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -46,6 +47,41 @@ def fetch(symbol):
     }
 
 
+def fetch_div(symbol):
+    """Dividendos pagos nos últimos 12 meses, por unidade (na moeda da cotação). 0 se não paga."""
+    import pandas as pd
+    import yfinance as yf
+    d = yf.Ticker(symbol).dividends
+    if d is None or len(d) == 0:
+        return 0.0
+    cutoff = pd.Timestamp.now(tz=d.index.tz) - pd.Timedelta(days=365)
+    return float(d[d.index > cutoff].sum())
+
+
+def update_dividends(symbols):
+    """Uma vez por dia por símbolo (não em cada corrida de 15 minutos). Se a coluna ainda não existir, ignora."""
+    try:
+        have = api("GET", "quotes?select=symbol,div_at") or []
+    except RuntimeError as e:
+        print(f"  dividendos ignorados (corre o phase1.sql no Supabase): {e}")
+        return
+    last = {r["symbol"]: r.get("div_at") for r in have}
+    now = datetime.now(timezone.utc)
+    done = 0
+    for s in symbols:
+        t = last.get(s)
+        if t and (now - datetime.fromisoformat(t.replace("Z", "+00:00"))).total_seconds() < 20 * 3600:
+            continue
+        try:
+            rate = fetch_div(s)
+            api("PATCH", "quotes?symbol=eq." + urllib.parse.quote(s, safe=""),
+                {"div_rate": rate, "div_at": now.isoformat()}, prefer="return=minimal")
+            done += 1
+        except Exception as e:
+            print(f"  dividendos falharam {s}: {e}")
+    print(f"dividendos atualizados: {done}")
+
+
 def main():
     if not URL or not KEY:
         sys.exit("Faltam SUPABASE_URL e/ou SUPABASE_SERVICE_KEY")
@@ -68,6 +104,7 @@ def main():
     except Exception as e:
         print(f"  câmbio não atualizado: {e}")
     api("POST", "rpc/refresh_snapshots", {})
+    update_dividends([r["symbol"] for r in rows])
     print(f"ok {len(rows)}, falhados {len(failed)}: {failed}")
     if symbols and not rows:
         sys.exit("Nenhum preço obtido (o Yahoo pode estar a bloquear este servidor)")
