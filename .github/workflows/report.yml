@@ -1,0 +1,31 @@
+name: Relatório e alertas
+on:
+  schedule:
+    - cron: "0 7 1 * *"      # dia 1 de cada mês: relatório completo
+    - cron: "30 19 * * 1-5"  # dias úteis ao fim do dia: alertas (só envia se houver novidades)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "monthly = relatório completo, alerts = só avisos"
+        default: monthly
+        type: choice
+        options: [monthly, alerts]
+concurrency: report
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: job/requirements.txt
+      - run: pip install -r job/requirements.txt
+      - run: python job/report.py "${{ github.event.inputs.mode || (github.event.schedule == '0 7 1 * *' && 'monthly' || 'alerts') }}"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          REPORT_EMAIL: ${{ secrets.REPORT_EMAIL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
