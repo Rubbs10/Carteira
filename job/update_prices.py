@@ -85,6 +85,80 @@ def update_dividends(symbols):
     print(f"dividendos atualizados: {done}")
 
 
+def risk_from_closes(dates, closes):
+    """Estatísticas de risco a partir de fechos diários (listas do mesmo tamanho, por ordem de data).
+    Devolve dict com vol (% anual, últimos 252 dias), mdd (maior queda em 5 anos, %), off_high (% abaixo do máximo de 52 semanas hoje)
+    e series {AAAA-MM: [volatilidade %, % abaixo do máximo de 52 semanas]} no último dia de cada mês (até 60 meses)."""
+    import math
+    n = len(closes)
+    if n < 60:
+        raise ValueError("histórico curto")
+    rets = [math.log(closes[i] / closes[i - 1]) for i in range(1, n)]
+
+    def vol_at(i):  # volatilidade com os retornos até ao índice i (inclusive de closes)
+        w = rets[max(0, i - 252):i]
+        if len(w) < 40:
+            return None
+        m = sum(w) / len(w)
+        return math.sqrt(sum((x - m) ** 2 for x in w) / (len(w) - 1)) * math.sqrt(252) * 100
+
+    def off_at(i):
+        hi = max(closes[max(0, i - 251):i + 1])
+        return (closes[i] / hi - 1) * 100
+
+    last_by_month = {}
+    for i, d in enumerate(dates):
+        last_by_month[d[:7]] = i
+    months = sorted(last_by_month)[-60:]
+    series = {}
+    for m in months:
+        i = last_by_month[m]
+        v = vol_at(i)
+        if v is not None:
+            series[m] = [round(v, 1), round(off_at(i), 1)]
+    start = max(0, n - 1260)
+    peak, mdd = closes[start], 0.0
+    for x in closes[start:]:
+        peak = max(peak, x)
+        mdd = min(mdd, (x / peak - 1) * 100)
+    return {"vol": round(vol_at(n - 1), 1), "mdd": round(mdd, 1), "off_high": round(off_at(n - 1), 1), "series": series}
+
+
+def fetch_risk(symbol):
+    import yfinance as yf
+    h = yf.Ticker(symbol).history(period="6y", interval="1d", auto_adjust=True)
+    if h is None or len(h) == 0:
+        raise ValueError("sem histórico")
+    h = h.dropna(subset=["Close"])
+    return risk_from_closes([d.strftime("%Y-%m-%d") for d in h.index], [float(x) for x in h["Close"]])
+
+
+def update_risk(symbols):
+    """Uma vez por semana por símbolo. Se a tabela ainda não existir (phase6.sql), ignora."""
+    try:
+        have = api("GET", "risk_stats?select=symbol,updated_at") or []
+    except RuntimeError as e:
+        print(f"  risco ignorado (corre o phase6.sql no Supabase): {e}")
+        return
+    last = {r["symbol"]: r.get("updated_at") for r in have}
+    now = datetime.now(timezone.utc)
+    done = 0
+    for s in symbols:
+        if done >= 25:  # no máximo 25 por corrida; o resto fica para a seguinte
+            break
+        t = last.get(s)
+        if t and (now - datetime.fromisoformat(t.replace("Z", "+00:00"))).total_seconds() < 6 * 86400:
+            continue
+        try:
+            r = fetch_risk(s)
+            api("POST", "risk_stats", [dict(symbol=s, updated_at=now.isoformat(), **r)],
+                prefer="resolution=merge-duplicates,return=minimal")
+            done += 1
+        except Exception as e:
+            print(f"  risco falhou {s}: {e}")
+    print(f"risco atualizado: {done}")
+
+
 ECB_URL = "https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?format=csvdata&startPeriod="
 
 
@@ -196,6 +270,7 @@ def main():
     apply_recurring()
     api("POST", "rpc/refresh_snapshots", {})
     update_dividends([r["symbol"] for r in rows])
+    update_risk(symbols)
     update_fx_history()
     print(f"ok {len(rows)}, falhados {len(failed)}: {failed}")
     if symbols and not rows:
