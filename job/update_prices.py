@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
@@ -132,6 +133,45 @@ def update_fx_history():
         print(f"  histórico de câmbio falhou: {e}")
 
 
+def apply_recurring():
+    """Aportes automáticos mensais: no dia pedido (ou na primeira corrida depois dele) soma o valor à posição manual.
+    Cada aporte só corre uma vez por mês. Se a tabela ainda não existir, ignora."""
+    try:
+        rows = api("GET", "recurring_contribs?select=*&active=eq.true") or []
+    except RuntimeError as e:
+        print(f"  aportes automáticos ignorados (corre o phase5.sql no Supabase): {e}")
+        return
+    today = datetime.now(ZoneInfo("Europe/Lisbon")).date()
+    month_start = today.replace(day=1).isoformat()
+    done = 0
+    for r in rows:
+        try:
+            if today.day < int(r["day"]) or (r.get("last_run") and str(r["last_run"])[:7] == today.isoformat()[:7]):
+                continue
+            prev = r.get("last_run")
+            # reservar este mês (se outra corrida já o fez, não devolve nada)
+            claim = api("PATCH", f"recurring_contribs?id=eq.{r['id']}&or=(last_run.is.null,last_run.lt.{month_start})",
+                        {"last_run": today.isoformat()}, prefer="return=representation") or []
+            if not claim:
+                continue
+            try:
+                pos = (api("GET", f"positions?id=eq.{r['position_id']}&select=qty,avg_cost,manual_price,manual,user_id") or [None])[0]
+                if not pos or not pos.get("manual") or pos.get("manual_price") is None or (pos.get("user_id") and r.get("user_id") and pos["user_id"] != r["user_id"]):
+                    raise RuntimeError("posição não existe ou não é manual")
+                qty = float(pos["qty"]) or 1.0
+                add = float(r["amount"]) / qty
+                api("PATCH", f"positions?id=eq.{r['position_id']}",
+                    {"avg_cost": round(float(pos["avg_cost"]) + add, 6), "manual_price": round(float(pos["manual_price"]) + add, 6),
+                     "manual_price_at": datetime.now(timezone.utc).isoformat()}, prefer="return=minimal")
+                done += 1
+            except Exception:
+                api("PATCH", f"recurring_contribs?id=eq.{r['id']}", {"last_run": prev}, prefer="return=minimal")  # libertar para tentar de novo
+                raise
+        except Exception as e:
+            print(f"  aporte automático falhou ({r.get('id')}): {e}")
+    print(f"aportes automáticos aplicados: {done}")
+
+
 def main():
     if not URL or not KEY:
         sys.exit("Faltam SUPABASE_URL e/ou SUPABASE_SERVICE_KEY")
@@ -153,6 +193,7 @@ def main():
         print(f"câmbio USD_EUR = {1 / x:.5f}")
     except Exception as e:
         print(f"  câmbio não atualizado: {e}")
+    apply_recurring()
     api("POST", "rpc/refresh_snapshots", {})
     update_dividends([r["symbol"] for r in rows])
     update_fx_history()

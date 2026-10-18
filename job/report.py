@@ -177,7 +177,6 @@ def make_xlsx(R):
                     c.number_format = f
         for i, w in enumerate(widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = w
-        ws.freeze_panes = "A2"
         ws.row_dimensions[1].height = 30
 
     ws = wb.active
