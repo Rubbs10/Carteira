@@ -272,12 +272,36 @@ def make_pdf(R):
     return out.getvalue()
 
 
+def make_backup(uid):
+    """Cópia de segurança completa (JSON) dos teus dados, anexada ao email mensal."""
+    out = {"gerado_em": datetime.now(timezone.utc).isoformat(), "utilizador": uid}
+    for tab in ("divisions", "positions", "recurring_contribs", "snapshots", "settings"):
+        try:
+            out[tab] = up.api("GET", f"{tab}?user_id=eq.{uid}&select=*") or []
+        except Exception as e:  # tabela ainda não criada: ignora
+            out[tab] = []
+            print(f"  backup: {tab} ignorada ({e})")
+    txs, off = [], 0
+    while off < 50000:
+        try:
+            page = up.api("GET", f"transactions?user_id=eq.{uid}&select=*&order=occurred_at&limit=1000&offset={off}") or []
+        except Exception as e:
+            print(f"  backup: transações ignoradas ({e})")
+            break
+        txs += page
+        if len(page) < 1000:
+            break
+        off += 1000
+    out["transactions"] = txs
+    return json.dumps(out, ensure_ascii=False, default=str).encode("utf-8")
+
+
 def make_html(R, title):
     lis = "".join(f"<li>{a[1]}</li>" for a in R["alerts"]) or "<li>Sem avisos.</li>"
     chg = f"<p>Variação do mês: <b>{eur(R['chg']['value'], True)}</b></p>" if R["chg"] else ""
     return (f"<div style='font-family:Segoe UI,Arial,sans-serif;color:#0e1a24;max-width:560px'><h2 style='color:#0a6a8a;margin:0 0 8px'>{title}</h2>"
             f"<p style='font-size:22px;margin:4px 0'><b>{eur(R['total'])}</b></p><p>Ganho total: <b>{eur(R['pl'], True)}</b></p>{chg}"
-            f"<h3 style='margin:16px 0 4px'>Avisos</h3><ul>{lis}</ul><p style='color:#586a78;font-size:12px'>PDF e Excel completos em anexo.</p></div>")
+            f"<h3 style='margin:16px 0 4px'>Avisos</h3><ul>{lis}</ul><p style='color:#586a78;font-size:12px'>PDF e Excel completos em anexo, mais a cópia de segurança dos teus dados (ficheiro .json: guarda-o).</p></div>")
 
 
 def send(to, subject, html, files):
@@ -313,7 +337,8 @@ def main(mode):
     m = R["month"]
     if mode == "monthly":
         title = f"PatrimÓ - relatório de {MESES[m.month - 1]} de {m.year}"
-        send(to, title, make_html(R, title), [(f"patrimo-{m.year}-{m.month:02d}.pdf", make_pdf(R)), (f"patrimo-{m.year}-{m.month:02d}.xlsx", make_xlsx(R))])
+        send(to, title, make_html(R, title), [(f"patrimo-{m.year}-{m.month:02d}.pdf", make_pdf(R)), (f"patrimo-{m.year}-{m.month:02d}.xlsx", make_xlsx(R)),
+                                           (f"patrimo-backup-{m.year}-{m.month:02d}.json", make_backup(uid))])
         return
     try:
         sent = {r["key"]: r["sent_on"] for r in up.api("GET", f"alerts_sent?user_id=eq.{uid}&select=key,sent_on") or []}
@@ -331,7 +356,7 @@ def main(mode):
         return
     R2 = dict(R, alerts=new)
     title = "PatrimÓ - " + ("1 aviso" if len(new) == 1 else f"{len(new)} avisos")
-    send(to, title, make_html(R2, title).replace("PDF e Excel completos em anexo.", ""), [])
+    send(to, title, make_html(R2, title).replace("PDF e Excel completos em anexo, mais a cópia de segurança dos teus dados (ficheiro .json: guarda-o).", ""), [])
     up.api("POST", "alerts_sent", [{"user_id": uid, "key": a[0], "sent_on": date.today().isoformat()} for a in new],
            prefer="resolution=merge-duplicates,return=minimal")
 
